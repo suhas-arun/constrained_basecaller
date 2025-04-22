@@ -1,4 +1,5 @@
 import random
+import argparse
 from utils import find_homopolymers, get_gc_content, write_fasta
 
 
@@ -66,24 +67,56 @@ def generate_sequences(
 
     return sequences
 
+def argparser():
+    parser = argparse.ArgumentParser(description="Generate synthetic DNA sequences.")
+    parser.add_argument(
+        "--num_sequences",
+        type=int,
+        default=100000,
+        help="Number of sequences to generate",
+    )
+    parser.add_argument(
+        "--sequence_length", type=int, default=500, help="Length of each DNA sequence"
+    )
+    parser.add_argument(
+        "--max_homopolymer_length",
+        type=int,
+        default=3,
+        help="Maximum allowed homopolymer length",
+    )
+    parser.add_argument(
+        "--min_gc",
+        type=float,
+        default=0.4,
+        help="Minimum GC content (between 0 and 1)",
+    )
+    parser.add_argument(
+        "--max_gc",
+        type=float,
+        default=0.6,
+        help="Maximum GC content (between 0 and 1)",
+    )
+    parser.add_argument(
+        "--output_file",
+        type=str,
+        default="data/mock_data.fasta",
+        help="Output FASTA file path",
+    )
+    return parser
 
 if __name__ == "__main__":
-    NUM_SEQUENCES = 100000
-    SEQUENCE_LENGTH = 500
-    MAX_HOMOPOLYMER_LENGTH = 3
-    MIN_GC_CONTENT = 0.4
-    MAX_GC_CONTENT = 0.6
-    OUTPUT_FILE = "data/mock_data.fasta"
+    parser = argparser()
+    args = parser.parse_args()
 
     print("Generating sequences...")
     sequences = generate_sequences(
-        NUM_SEQUENCES,
-        SEQUENCE_LENGTH,
-        MAX_HOMOPOLYMER_LENGTH,
-        MIN_GC_CONTENT,
-        MAX_GC_CONTENT,
+        args.num_sequences,
+        args.sequence_length,
+        args.max_homopolymer_length,
+        args.min_gc,
+        args.max_gc,
     )
 
     print("Writing sequences to FASTA file...")
-    write_fasta(sequences, OUTPUT_FILE)
+    write_fasta(sequences, args.output_file)
     print("Done.")
