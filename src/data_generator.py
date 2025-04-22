@@ -73,6 +73,7 @@ if __name__ == "__main__":
     MAX_HOMOPOLYMER_LENGTH = 3
     MIN_GC_CONTENT = 0.4
     MAX_GC_CONTENT = 0.6
+    OUTPUT_FILE = "data/mock_data.fasta"
 
     print("Generating sequences...")
     sequences = generate_sequences(
@@ -84,5 +85,5 @@ if __name__ == "__main__":
     )
 
     print("Writing sequences to FASTA file...")
-    write_fasta(sequences, "../data/mock_data.fasta")
+    write_fasta(sequences, OUTPUT_FILE)
     print("Done.")
