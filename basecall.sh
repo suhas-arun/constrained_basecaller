@@ -35,48 +35,58 @@ MODEL="bonito/models/dna_r10.4.1_e8.2_400bps_sup@v5.0.0/"
 
 source /vol/bitbucket/sa2021/miniconda3/etc/profile.d/conda.sh
 
-# Clean up previous runs
-rm -rf "$ROOT_DIR/data"
-rm -rf "$ROOT_DIR/out"
-mkdir -p "$ROOT_DIR/data"
-mkdir -p "$ROOT_DIR/out"
+read -p "Do you want to generate new data? (y/n): " confirm
+if [[ $confirm != "y" && $confirm != "Y" ]]; then
+    echo "Using previously generated data."
+else
+    # Clean up previous runs
+    rm -rf "$ROOT_DIR/data"
+    rm -rf "$ROOT_DIR/out"
+    mkdir -p "$ROOT_DIR/data"
+    mkdir -p "$ROOT_DIR/out"
 
-# Generate FASTA file
-conda activate bonito-env
-python3 src/data_generator.py \
-    --num_sequences $NUM_SEQUENCES \
-    --sequence_length $SEQUENCE_LENGTH \
-    --max_homopolymer_length $MAX_HOMOPOLYMER_LENGTH \
-    --min_gc $MIN_GC \
-    --max_gc $MAX_GC \
-    --output_file $FASTA_FILE
+    # Generate FASTA file
+    conda activate bonito-env
+    python3 src/data_generator.py \
+        --num_sequences $NUM_SEQUENCES \
+        --sequence_length $SEQUENCE_LENGTH \
+        --max_homopolymer_length $MAX_HOMOPOLYMER_LENGTH \
+        --min_gc $MIN_GC \
+        --max_gc $MAX_GC \
+        --output_file $FASTA_FILE
 
-# Convert sequences to squiggles (BLOW5)
-$SQUIGULATOR_DIR/squigulator \
-    $FASTA_FILE \
-    -n $NUM_SEQUENCES \
-    -r $SEQUENCE_LENGTH \
-    -x $DNA_PROFILE \
-    -o $BLOW5_FILE \
+    # Convert sequences to squiggles (BLOW5)
+    $SQUIGULATOR_DIR/squigulator \
+        $FASTA_FILE \
+        -n $NUM_SEQUENCES \
+        -r $SEQUENCE_LENGTH \
+        -x $DNA_PROFILE \
+        -o $BLOW5_FILE
 
-# Split BLOW5 file for parallel processing
-$SLOW5TOOLS_DIR/slow5tools split \
-    $BLOW5_FILE \
-    -d $BLOW5_DIR \
-    -r $((NUM_SEQUENCES / NUM_THREADS + 1))
-    
-# Convert BLOW5 to FAST5
-$SLOW5TOOLS_DIR/slow5tools s2f $BLOW5_DIR -d $FAST5_DIR
+    # Split BLOW5 file for parallel processing
+    $SLOW5TOOLS_DIR/slow5tools split \
+        $BLOW5_FILE \
+        -d $BLOW5_DIR \
+        -r $((NUM_SEQUENCES / NUM_THREADS + 1))
 
-# Perform basecalling using Bonito
-cd bonito
-bonito basecaller \
-    --reference $FASTA_FILE \
-    $MODEL $FAST5_DIR > $SAM_FILE
+    # Convert BLOW5 to FAST5
+    $SLOW5TOOLS_DIR/slow5tools s2f $BLOW5_DIR -d $FAST5_DIR
 
-# Clean up
-rm -rf $BLOW5_FILE
-rm -rf $BLOW5_DIR
-rm -rf $FAST5_DIR
+    # Perform basecalling using Bonito
+    cd bonito
+    bonito basecaller \
+        --reference $FASTA_FILE \
+        $MODEL $FAST5_DIR >$SAM_FILE
+    cd $ROOT_DIR
+
+    # Clean up
+    rm -rf $BLOW5_FILE
+    rm -rf $BLOW5_DIR
+    rm -rf $FAST5_DIR
+fi
+
+# Analyse basecalling results
+echo "Analysing basecalling results..."
+python3 src/constraint_analysis.py --sam_file $SAM_FILE
 
 conda deactivate
