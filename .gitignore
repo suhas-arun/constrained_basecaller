@@ -1,4 +1,5 @@
 __pycache__/
+out/
 
 *.pod5
 *.fastq
@@ -7,3 +8,4 @@ __pycache__/
 *.sam
 *.blow5
 *.fast5
+*.npy
