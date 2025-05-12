@@ -8,6 +8,11 @@ FASTA_FILE="$ROOT_DIR/data/reference.fasta"
 FAST5_DIR="$ROOT_DIR/data/fast5"
 SAM_FILE="$ROOT_DIR/out/basecalls.sam"
 
+TRAINING_DIR="$ROOT_DIR/data/train"
+TRAINING_DATA="$TRAINING_DIR/basecalls.sam"
+OUTPUT_DIR="$ROOT_DIR/out/constrained"
+WEIGHTS_FILE="$OUTPUT_DIR/final_weights.tar"
+
 # Baseline model parameters
 MODEL="dna_r10.4.1_e8.2_400bps_sup@v5.0.0/"
 
@@ -28,14 +33,9 @@ read -p "Do you want to train the model? (y/n): " train
 if [[ $train != "y" && $train != "Y" ]]; then
     echo "Using pre-trained model."
 else
-    TRAINING_DIR="$ROOT_DIR/data/train"
-    TRAINING_DATA="$TRAINING_DIR/basecalls.sam"
-    OUTPUT_DIR="$ROOT_DIR/out/constrained"
-
     # Training hyperparameters
     EPOCHS=20
-    CHUNKS=400
-    VALID_CHUNKS=20
+    CHUNKS=4000
     BATCH_SIZE=16
 
     mkdir -p $TRAINING_DIR
@@ -53,15 +53,16 @@ else
         --directory $TRAINING_DIR \
         --epochs $EPOCHS \
         --chunks $CHUNKS \
-        --valid-chunks $VALID_CHUNKS \
-        --batch $BATCH_SIZE
+        --batch $BATCH_SIZE \
+        --weights-path $WEIGHTS_FILE
 
     cd $ROOT_DIR
 fi
 
-python3 -m basecaller.main \
+python3 -m src/basecaller.main \
     $FAST5_DIR \
     $FASTA_FILE \
+    --weights-path $WEIGHTS_FILE \
     > $SAM_FILE
 
 # Analyse basecalling results
