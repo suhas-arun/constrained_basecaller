@@ -24,6 +24,10 @@ def main(args):
         exit(1)
 
     model = ConstraintAwareBasecaller()
+    if args.weights_path:
+        sys.stderr.write(f"> loading weights from {args.weights_path}\n")
+        model.load_state_dict(torch.load(args.weights_path))
+    
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device).half()
     model.eval()
@@ -119,6 +123,11 @@ if __name__ == "__main__":
         type=int,
         default=500,
         help="Overlap size for basecalling (default: 500)",
+    )
+    parser.add_argument(
+        "--weights-path",
+        type=str,
+        help="Path to weights file (default: None)",
     )
 
     args = parser.parse_args()

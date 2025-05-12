@@ -1,3 +1,7 @@
+import os
+import torch
+
+
 def find_homopolymers(sequence, max_length=3):
     """
     Find homopolymers greater than length `max_length` in the sequence.
@@ -38,3 +42,20 @@ def write_fasta(sequences, filename, line_length=80):
             f.write(f">sequence_{i}\n")
             for j in range(0, len(seq), line_length):
                 f.write(seq[j : j + line_length] + "\n")
+
+
+def load_model_weights(model, weights_path):
+    """
+    Load model weights from a specified path.
+    """
+    if os.path.exists(weights_path):
+        model.load_state_dict(torch.load(weights_path))
+    else:
+        raise FileNotFoundError(f"Model weights not found at {weights_path}")
+
+
+def save_model_weights(model, weights_path):
+    """
+    Save model weights to a specified path.
+    """
+    torch.save(model.state_dict(), weights_path)

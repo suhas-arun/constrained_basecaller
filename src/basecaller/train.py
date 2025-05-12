@@ -5,6 +5,7 @@ import toml
 import torch
 
 from basecaller.model import ConstraintAwareBasecaller
+from utils import save_model_weights
 
 
 def main(args):
@@ -61,6 +62,7 @@ def main(args):
     )
     trainer.fit(workdir, args.epochs, lr, **config["optim"])
 
+    save_model_weights(model, args.weights_path)
 
 if __name__ == "__main__":
     import argparse
@@ -105,6 +107,11 @@ if __name__ == "__main__":
         type=str,
         default="0.001",
         help="Learning rate for training",
+    )
+    parser.add_argument(
+        "--weights-path",
+        type=str,
+        help="Path to save model weights",
     )
     args = parser.parse_args()
 
