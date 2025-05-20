@@ -21,19 +21,13 @@ SLOW5TOOLS_DIR="$ROOT_DIR/lib/slow5tools-$SLOW5TOOLS_VERSION"
 NUM_THREADS=8
 
 # Data generation parameters
-NUM_SEQUENCES=10000
+NUM_SEQUENCES=$3
 SEQUENCE_LENGTH=2000
 MAX_HOMOPOLYMER_LENGTH=3
 MIN_GC=0.4
 MAX_GC=0.6
 
 ##################################################
-
-# Clean up previous runs
-rm -rf "$ROOT_DIR/data"
-rm -rf "$ROOT_DIR/out"
-mkdir -p "$ROOT_DIR/data"
-mkdir -p "$ROOT_DIR/out"
 
 # Generate FASTA file
 python3 src/data_generator.py \

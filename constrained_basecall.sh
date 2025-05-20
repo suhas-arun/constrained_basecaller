@@ -4,17 +4,11 @@
 ##################################################
 
 ROOT_DIR=$(pwd)
-FASTA_FILE="$ROOT_DIR/data/reference.fasta"
-FAST5_DIR="$ROOT_DIR/data/fast5"
-SAM_FILE="$ROOT_DIR/out/basecalls.sam"
-
-TRAINING_DIR="$ROOT_DIR/data/train"
-TRAINING_DATA="$TRAINING_DIR/basecalls.sam"
 OUTPUT_DIR="$ROOT_DIR/out/constrained"
 WEIGHTS_FILE="$OUTPUT_DIR/final_weights.tar"
 
 # Baseline model parameters
-MODEL="dna_r10.4.1_e8.2_400bps_sup@v5.0.0/"
+PRETRAINED_MODEL="dna_r10.4.1_e8.2_400bps_sup@v5.0.0/"
 
 ##################################################
 
@@ -22,31 +16,38 @@ source /vol/bitbucket/sa2021/miniconda3/etc/profile.d/conda.sh
 conda activate bonito-env
 export PYTHONPATH="bonito:src"
 
-read -p "Do you want to generate new data? (y/n): " confirm
-if [[ $confirm != "y" && $confirm != "Y" ]]; then
-    echo "Using previously generated data."
-else
-    ./generate_data.sh $FASTA_FILE $FAST5_DIR
-fi
-
 read -p "Do you want to train the model? (y/n): " train
 if [[ $train != "y" && $train != "Y" ]]; then
     echo "Using pre-trained model."
 else
+    TRAINING_DIR="$ROOT_DIR/data/train"
+    TRAINING_DATA="$TRAINING_DIR/basecalls.sam"
+    TRAINING_FASTA_FILE="$TRAINING_DIR/reference.fasta"
+    TRAINING_FAST5_DIR="$TRAINING_DIR/fast5"
+
     # Training hyperparameters
-    EPOCHS=20
+    EPOCHS=10
     CHUNKS=4000
     BATCH_SIZE=16
 
-    mkdir -p $TRAINING_DIR
+    # Clean up previous training data
+    rm -rf $TRAINING_DIR
     rm -rf $OUTPUT_DIR
+    mkdir -p $TRAINING_DIR
+
+    read -p "Do you want to generate new training data? (y/n): " confirm
+    if [[ $confirm != "y" && $confirm != "Y" ]]; then
+        echo "Using previously generated training data."
+    else
+        ./generate_data.sh $TRAINING_FASTA_FILE $TRAINING_FAST5_DIR 10000
+    fi
 
     echo "Preparaing training data..."
     bonito basecaller \
-        --reference $FASTA_FILE \
-        --save-ct \
+        --reference $TRAINING_FASTA_FILE \
+        --save-ctc \
         --min-accuracy-save-ctc 0.8 \
-        $MODEL $FAST5_DIR > $TRAINING_DATA
+        $PRETRAINED_MODEL $TRAINING_FAST5_DIR > $TRAINING_DATA
 
     python3 -m basecaller.train \
         --training-directory $OUTPUT_DIR \
@@ -59,9 +60,25 @@ else
     cd $ROOT_DIR
 fi
 
-python3 -m src/basecaller.main \
-    $FAST5_DIR \
-    $FASTA_FILE \
+TEST_DIR="$ROOT_DIR/data/test"
+TEST_FASTA_FILE="$TEST_DIR/reference.fasta"
+TEST_FAST5_DIR="$TEST_DIR/fast5"
+SAM_FILE="$OUTPUT_DIR/basecalls.sam"
+
+mkdir -p $TEST_DIR
+
+read -p "Do you want to generate new test data? (y/n): " confirm
+if [[ $confirm != "y" && $confirm != "Y" ]]; then
+    echo "Using previously generated test data."
+else
+    ./generate_data.sh $TEST_FASTA_FILE $TEST_FAST5_DIR 10000
+fi
+
+read -p "Enter the path to the weights file: " WEIGHTS_FILE
+
+python3 -m basecaller.main \
+    $TEST_FAST5_DIR \
+    $TEST_FASTA_FILE \
     --weights-path $WEIGHTS_FILE \
     > $SAM_FILE
 
