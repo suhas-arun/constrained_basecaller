@@ -40,14 +40,14 @@ else
         echo "Using previously generated training data."
     else
         ./generate_data.sh $TRAINING_FASTA_FILE $TRAINING_FAST5_DIR 10000
-    fi
 
-    echo "Preparaing training data..."
-    bonito basecaller \
-        --reference $TRAINING_FASTA_FILE \
-        --save-ctc \
-        --min-accuracy-save-ctc 0.8 \
-        $PRETRAINED_MODEL $TRAINING_FAST5_DIR > $TRAINING_DATA
+        echo "Preparaing training data..."
+        bonito basecaller \
+            --reference $TRAINING_FASTA_FILE \
+            --save-ctc \
+            --min-accuracy-save-ctc 0.8 \
+            $PRETRAINED_MODEL $TRAINING_FAST5_DIR > $TRAINING_DATA
+    fi
 
     python3 -m basecaller.train \
         --training-directory $OUTPUT_DIR \
