@@ -9,7 +9,11 @@ from utils import save_model_weights
 
 
 def main(args):
-    workdir = os.path.expanduser(args.training_directory)
+    if args.pre_training:
+        print("[pre-training model]")
+        return
+
+    workdir = os.path.expanduser(args.output_directory)
     os.makedirs(workdir, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -28,7 +32,7 @@ def main(args):
     toml.dump({**config, **argsdict}, open(os.path.join(workdir, "config.toml"), "w"))
 
     data = DataSettings(
-        training_data=args.directory,
+        training_data=args.training_directory,
         num_train_chunks=args.chunks,
         num_valid_chunks=args.valid_chunks,
         output_dir=workdir,
@@ -64,17 +68,23 @@ def main(args):
 
     save_model_weights(model, args.weights_path)
 
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--training-directory",
+        "--pre-training",
+        action="store_true",
+        help="Run pre-training before training the model",
+    )
+    parser.add_argument(
+        "--output-directory",
         type=str,
         help="Directory to save training data and checkpoints",
     )
     parser.add_argument(
-        "--directory",
+        "--training-directory",
         type=str,
         help="Directory containing training data",
     )

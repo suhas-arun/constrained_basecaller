@@ -23,9 +23,13 @@ NUM_THREADS=8
 # Data generation parameters
 NUM_SEQUENCES=$3
 SEQUENCE_LENGTH=2000
+CONSTRAINED_FLAG=$4
 MAX_HOMOPOLYMER_LENGTH=3
 MIN_GC=0.4
 MAX_GC=0.6
+MIN_HP_INSERT_LENGTH=3
+MAX_HP_INSERT_LENGTH=5
+HP_INSERT_PROBABILITY=0.1
 
 ##################################################
 
@@ -36,7 +40,11 @@ python3 src/data_generator.py \
     --max_homopolymer_length $MAX_HOMOPOLYMER_LENGTH \
     --min_gc $MIN_GC \
     --max_gc $MAX_GC \
-    --output_file $FASTA_FILE
+    --output_file $FASTA_FILE \
+    --min_hp_insert_length $MIN_HP_INSERT_LENGTH \
+    --max_hp_insert_length $MAX_HP_INSERT_LENGTH \
+    --hp_insert_probability $HP_INSERT_PROBABILITY \
+    $CONSTRAINED_FLAG
 
 # Convert sequences to squiggles (BLOW5)
 $SQUIGULATOR_DIR/squigulator \

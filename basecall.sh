@@ -21,7 +21,7 @@ read -p "Do you want to generate new data? (y/n): " confirm
 if [[ $confirm != "y" && $confirm != "Y" ]]; then
     echo "Using previously generated data."
 else
-    ./generate_data.sh $FASTA_FILE $FAST5_DIR 10000
+    ./generate_data.sh $FASTA_FILE $FAST5_DIR 10000 --constrained
 fi
 
 read -p "Do you want to use Bonito for basecalling? (y/n): " bonito

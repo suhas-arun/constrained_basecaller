@@ -3,7 +3,7 @@ import argparse
 from utils import find_homopolymers, get_gc_content, write_fasta
 
 
-def generate_sequence(length, gc_content, max_homopolymer_length):
+def generate_constrained_sequence(length, gc_content, max_homopolymer_length):
     """
     Generates random DNA sequence of given length with specified GC content.
     The sequence will not contain homopolymers longer than `max_homopolymer_length`.
@@ -44,8 +44,49 @@ def generate_sequence(length, gc_content, max_homopolymer_length):
     return "".join(sequence)
 
 
-def generate_sequences(
-    num_sequences, length, max_homopolymer_length, min_gc_content, max_gc_content
+def generate_unconstrained_sequence(
+    length, min_hp_insert_length, max_hp_insert_length, hp_insert_probability
+):
+    """
+    Generates a random DNA sequence of given length containing homopolymers.
+    The homopolymers will be between `min_hp_insert_length` and `max_hp_insert_length`.
+    The probability of a homopolymer occurring is controlled by `hp_insert_probability`.
+    """
+    assert (
+        min_hp_insert_length <= max_hp_insert_length
+    ), "Minimum homopolymer length must be less than or equal to maximum"
+
+    assert (
+        0 <= hp_insert_probability <= 1
+    ), "Homopolymer probability must be between 0 and 1"
+
+    bases = ["A", "T", "G", "C"]
+    sequence = []
+
+    while len(sequence) < length:
+        base = random.choice(bases)
+        if random.random() < hp_insert_probability:
+            # Generate a homopolymer
+            remaining_length = length - len(sequence)
+            homopolymer_length = min(
+                remaining_length,
+                random.randint(min_hp_insert_length, max_hp_insert_length),
+            )
+            sequence.extend([base] * homopolymer_length)
+        else:
+            # Add a single base
+            sequence.append(base)
+
+
+    return "".join(sequence)
+
+
+def generate_constrained_sequences(
+    num_sequences,
+    length,
+    max_homopolymer_length=None,
+    min_gc_content=None,
+    max_gc_content=None,
 ):
     """
     Generates list of random DNA sequences.
@@ -53,7 +94,7 @@ def generate_sequences(
     sequences = []
     for _ in range(num_sequences):
         gc_percent = random.uniform(min_gc_content, max_gc_content)
-        seq = generate_sequence(length, gc_percent, max_homopolymer_length)
+        seq = generate_constrained_sequence(length, gc_percent, max_homopolymer_length)
 
         assert (
             find_homopolymers(seq, max_homopolymer_length) == []
@@ -67,6 +108,30 @@ def generate_sequences(
 
     return sequences
 
+
+def generate_unconstrained_sequences(
+    num_sequences,
+    length,
+    min_hp_insert_length=3,
+    max_hp_insert_length=5,
+    hp_insert_probability=0.1,
+):
+    """
+    Generates a list of unconstrained random DNA sequences.
+    """
+    sequences = []
+    for _ in range(num_sequences):
+        seq = generate_unconstrained_sequence(
+            length,
+            min_hp_insert_length=min_hp_insert_length,
+            max_hp_insert_length=max_hp_insert_length,
+            hp_insert_probability=hp_insert_probability,
+        )
+        sequences.append(seq)
+
+    return sequences
+
+
 def argparser():
     parser = argparse.ArgumentParser(description="Generate synthetic DNA sequences.")
     parser.add_argument(
@@ -78,11 +143,17 @@ def argparser():
     parser.add_argument(
         "--sequence_length", type=int, default=500, help="Length of each DNA sequence"
     )
+    # Constrained generation parameters
+    parser.add_argument(
+        "--constrained",
+        action="store_true",
+        help="Generate constrained sequences with specified GC content and homopolymer length",
+    )
     parser.add_argument(
         "--max_homopolymer_length",
         type=int,
         default=3,
-        help="Maximum allowed homopolymer length",
+        help="Maximum allowed homopolymer length (for constrained sequences)",
     )
     parser.add_argument(
         "--min_gc",
@@ -96,6 +167,26 @@ def argparser():
         default=0.6,
         help="Maximum GC content (between 0 and 1)",
     )
+    # Unconstrained generation parameters
+    parser.add_argument(
+        "--min_hp_insert_length",
+        type=int,
+        default=3,
+        help="Minimum homopolymer length for unconstrained sequences",
+    )
+    parser.add_argument(
+        "--max_hp_insert_length",
+        type=int,
+        default=5,
+        help="Maximum homopolymer length for unconstrained sequences",
+    )
+    parser.add_argument(
+        "--hp_insert_probability",
+        type=float,
+        default=0.1,
+        help="Probability of inserting a homopolymer in unconstrained sequences",
+    )
+    # Output file
     parser.add_argument(
         "--output_file",
         type=str,
@@ -104,19 +195,29 @@ def argparser():
     )
     return parser
 
+
 if __name__ == "__main__":
     parser = argparser()
     args = parser.parse_args()
 
     print("Generating sequences...")
-    sequences = generate_sequences(
-        args.num_sequences,
-        args.sequence_length,
-        args.max_homopolymer_length,
-        args.min_gc,
-        args.max_gc,
-    )
+    if args.constrained:
+        sequences = generate_constrained_sequences(
+            args.num_sequences,
+            args.sequence_length,
+            args.max_homopolymer_length,
+            args.min_gc,
+            args.max_gc,
+        )
+    else:
+        sequences = generate_unconstrained_sequences(
+            args.num_sequences,
+            args.sequence_length,
+            args.min_hp_insert_length,
+            args.max_hp_insert_length,
+            args.hp_insert_probability,
+        )
 
-    print("Writing sequences to FASTA file...")
+    print("Writing sequences to FASTA file:", args.output_file)
     write_fasta(sequences, args.output_file)
     print("Done.")
