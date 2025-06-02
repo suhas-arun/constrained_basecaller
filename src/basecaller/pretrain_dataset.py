@@ -1,11 +1,14 @@
 from bonito.multiprocessing import process_cancel
 from bonito.reader import Reader
+import numpy as np
 
 
 class PretrainDataset:
     """
     Dataset class used for pretraining the basecaller.
     """
+
+    BASES = {"A": 0, "C": 1, "G": 2, "T": 3, "N": 4}
 
     def __init__(
         self,
@@ -14,12 +17,14 @@ class PretrainDataset:
         chunksize=2000,
         overlap=200,
         signal_points_per_base=10.0,
+        max_homopolymer_length=3,
     ):
         self.fasta_file = fasta_file
         self.fast5_dir = fast5_dir
         self.chunksize = chunksize
         self.overlap = overlap
         self.signal_points_per_base = signal_points_per_base
+        self.max_homopolymer_length = max_homopolymer_length
         self.reader = Reader(fast5_dir, recursive=True)
 
         self.sequences = self.read_fasta()
@@ -100,12 +105,45 @@ class PretrainDataset:
                 f"Warning: Signal chunk for {read_id} (idx {idx}) has len {len(signal_chunk)}, expected {self.chunksize}."
             )
 
-        # TODO: complete homopolymer label generation
+        hp_lengths, is_hp, hp_bases = self.generate_homopolymer_labels(sequence_segment)
 
-        return signal_chunk, sequence_segment
+        hp_labels = {
+            "hp_lengths": hp_lengths,
+            "is_hp": is_hp,
+            "hp_bases": hp_bases,
+        }
+
+        # TODO: downsample hp_labels to match signal_chunk downsampling in model
+
+        return signal_chunk, hp_labels
+
+    def generate_homopolymer_labels(self, sequence):
+        """
+        Generate homopolymer labels for a given sequence.
+        """
+        n = len(sequence)
+        hp_lengths = np.zeros(n, dtype=np.int32)
+        is_hp = np.zeros(n, dtype=np.bool_)
+        hp_bases = np.full(n, self.BASES["N"], dtype=np.int32)
+
+        i = 0
+        while i < n:
+            current_base = sequence[i]
+            j = i
+            while j < n and sequence[j] == current_base:
+                j += 1
+            length = j - i
+            if length >= self.max_homopolymer_length:
+                hp_base_index = self.BASES.get(current_base, self.BASES["N"])
+                for k in range(i, j):
+                    hp_lengths[k] = length
+                    is_hp[k] = True
+                    hp_bases[k] = hp_base_index
+            i = j
+
+        return hp_lengths, is_hp, hp_bases
 
 
 if __name__ == "__main__":
-    d = PretrainDataset("data/test/reference.fasta", "data/test/fast5")
-    for i in range(len(d)):
-        item = d[i]
+    d = PretrainDataset("data/train/stage1/reference.fasta", "data/train/stage1/fast5")
+    item = d[0]
