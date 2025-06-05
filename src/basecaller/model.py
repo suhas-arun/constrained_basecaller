@@ -1,20 +1,22 @@
 import types
 import logging
 
+from basecaller.hp_extractor import HomopolymerFeatureExtractor
+
 logger = logging.getLogger(__name__)
 
 import torch
 import torch.nn.functional as F
+from torch.nn import Module, AvgPool1d
 from bonito.crf.model import CTC_CRF, SeqdistModel
 from bonito.nn import (
     Convolution,
+    Linear,
     LinearCRFEncoder,
     LinearUpsample,
     Permute,
     Serial,
-    NamedSerial,
     Stack,
-    Module,
 )
 from bonito.transformer.model import (
     TransformerEncoderLayer,
@@ -111,72 +113,201 @@ class ConstraintAwareTransformerLayer(TransformerEncoderLayer):
         )
 
 
-def build_conv_layers():
-    return Serial(
-        sublayers=[
-            Convolution(1, 64, 5, padding=2, activation="swish", norm="batchnorm"),
-            Convolution(64, 64, 5, padding=2, activation="swish", norm="batchnorm"),
-            Convolution(
-                64, 128, 9, stride=3, padding=4, activation="swish", norm="batchnorm"
-            ),
-            Convolution(
-                128, 128, 9, stride=2, padding=4, activation="swish", norm="batchnorm"
-            ),
-            Convolution(
-                128, 512, 5, stride=2, padding=2, activation="swish", norm="batchnorm"
-            ),
-            Permute([0, 2, 1]),
-        ]
-    )
+class HomopolymerAwareEncoder(Module):
+    def __init__(self, hp_feature_dim=128, num_bases=5, transformer_d_model=512):
+        super().__init__()
+        self.hp_feature_dim = hp_feature_dim
+        self.num_bases = num_bases
 
+        # Convolutional layers
+        self.initial_convs = self.build_initial_convs()  # output length L/3
+        self.final_convs = self.build_final_convs()  # output length L/12
+        self.main_permute = Permute([0, 2, 1])  # (N, C, L) -> (N, L, C)
 
-def build_transformer_encoder():
-    return Stack(
-        sublayers=[
-            ConstraintAwareTransformerLayer(
-                d_model=512,
-                nhead=8,
-                dim_feedforward=2048,
-                deepnorm_alpha=2.4494897,
-                deepnorm_beta=0.2886751,
-                attn_window=[
-                    127,
+        # Homopolymer feature extraction
+        self.hp_extractor = HomopolymerFeatureExtractor(128, hp_feature_dim, num_bases)
+        self.hp_downsample = AvgPool1d(kernel_size=4, stride=4)  # L/3 -> L/12
+        self.hp_permute = Permute([0, 2, 1])  # (N, C, L) -> (N, L, C)
+        self.hp_project = Linear(hp_feature_dim, transformer_d_model)
+
+        self.transformer_encoder = self.build_transformer_encoder()
+        self.upsample = LinearUpsample(transformer_d_model, scale_factor=2)
+        self.crf_encoder = self.build_crf_encoder()
+
+    def forward(self, x, hp_true_labels=None):
+        # Initial convolutions
+        x_intermediate = self.initial_convs(x)  # (N, 128, L/3)
+
+        # Homopolymer feature extraction
+        hp_features, hp_lengths_logits, is_hp_logits, hp_bases_logits = (
+            self.hp_extractor(x_intermediate)
+        )
+        hp_features = self.hp_downsample(hp_features)  # (N, 128, L/12)
+        hp_features = self.hp_permute(hp_features)  # (N, L/12, 128)
+        hp_features = self.hp_project(hp_features)  # (N, L/12, 512)
+
+        # Main convolutional path
+        main_features = self.final_convs(x_intermediate)  # (N, 512, L/12)
+        main_features = self.main_permute(main_features)  # (N, L/12, 512)
+
+        # Fuse homopolymer features with main features
+        fused_features = main_features + hp_features
+
+        transformer_output = self.transformer_encoder(fused_features)
+        upsampled_output = self.upsample(transformer_output)
+        logits = self.crf_encoder(upsampled_output)
+
+        outputs = {
+            "logits": logits,
+            "hp_lengths_logits": hp_lengths_logits,
+            "is_hp_logits": is_hp_logits,
+            "hp_bases_logits": hp_bases_logits,
+        }
+
+        if hp_true_labels is not None:
+            outputs["hp_true_labels"] = hp_true_labels
+
+        return outputs
+
+    def build_initial_convs(self):
+        return Serial(
+            [
+                Convolution(1, 64, 5, padding=2, activation="swish", norm="batchnorm"),
+                Convolution(64, 64, 5, padding=2, activation="swish", norm="batchnorm"),
+                Convolution(
+                    64,
                     128,
-                ],
-            )
-            for _ in range(18)
-        ]
-    )
+                    9,
+                    stride=3,
+                    padding=4,
+                    activation="swish",
+                    norm="batchnorm",
+                ),
+            ]
+        )
+
+    def build_final_convs(self):
+        return Serial(
+            [
+                Convolution(
+                    128,
+                    128,
+                    9,
+                    stride=2,
+                    padding=4,
+                    activation="swish",
+                    norm="batchnorm",
+                ),
+                Convolution(
+                    128,
+                    512,
+                    5,
+                    stride=2,
+                    padding=2,
+                    activation="swish",
+                    norm="batchnorm",
+                ),
+            ]
+        )
+
+    def build_transformer_encoder(self):
+        return Stack(
+            sublayers=[
+                ConstraintAwareTransformerLayer(
+                    d_model=512,
+                    nhead=8,
+                    dim_feedforward=2048,
+                    deepnorm_alpha=2.4494897,
+                    deepnorm_beta=0.2886751,
+                    attn_window=[
+                        127,
+                        128,
+                    ],
+                )
+                for _ in range(18)
+            ]
+        )
+
+    def build_crf_encoder(self):
+        return LinearCRFEncoder(
+            insize=512,
+            n_base=4,
+            state_len=5,
+            bias=False,
+            scale=5.0,
+            blank_score=2.0,
+            expand_blanks=True,
+            permute=[
+                1,
+                0,
+                2,
+            ],
+        )
 
 
-def build_crf_encoder():
-    return LinearCRFEncoder(
-        insize=512,
-        n_base=4,
-        state_len=5,
-        bias=False,
-        scale=5.0,
-        blank_score=2.0,
-        expand_blanks=True,
-        permute=[
-            1,
-            0,
-            2,
-        ],
-    )
+def loss_fn(self, outputs, ctc_targets, ctc_target_lengths):
+    hp_true_labels = outputs.get("hp_true_labels", None)
+
+    # Extract logits and auxiliary outputs
+    logits = outputs["logits"]
+    hp_lengths_logits = outputs["hp_lengths_logits"]
+    is_hp_logits = outputs["is_hp_logits"]
+    hp_bases_logits = outputs["hp_bases_logits"]
+
+    device = logits.device
+    ctc_targets = ctc_targets.to(device)
+    ctc_target_lengths = ctc_target_lengths.to(device)
+
+    main_loss = self.seqdist.loss(logits, ctc_targets, ctc_target_lengths)
+    aux_loss_weight = 0.1
+
+    # Initialise auxiliary losses
+    hp_lengths_loss = torch.tensor(0.0, device=device)
+    is_hp_loss = torch.tensor(0.0, device=device)
+    hp_bases_loss = torch.tensor(0.0, device=device)
+
+    if hp_true_labels is not None:
+        true_hp_lengths = hp_true_labels["hp_lengths"].to(device)
+        true_is_hp = hp_true_labels["is_hp"].to(device)
+        true_hp_bases = hp_true_labels["hp_bases"].to(device)
+
+        # Regression loss for homopolymer lengths
+        hp_lengths_loss = F.mse_loss(hp_lengths_logits, true_hp_lengths)
+        # hp_lengths_loss = F.mse_loss(hp_lengths_logits.squeeze(-1), true_hp_lengths)
+
+        # Binary cross-entropy loss for homopolymer presence
+        is_hp_loss = F.binary_cross_entropy_with_logits(
+            is_hp_logits, true_is_hp.float()
+        )
+
+        # Categorical cross-entropy loss for homopolymer bases
+        hp_bases_loss = F.cross_entropy(
+            hp_bases_logits.view(-1, self.encoder.num_bases),
+            true_hp_bases.view(-1),
+            # 'N' is the last base
+            ignore_index=self.encoder.num_bases - 1,
+        )
+        aux_loss = hp_lengths_loss + is_hp_loss + hp_bases_loss
+        final_loss = aux_loss_weight * aux_loss
+    else:
+        final_loss = main_loss
+
+    return {
+        "loss": final_loss,
+        "main_loss": main_loss,
+        "hp_lengths_loss": hp_lengths_loss,
+        "is_hp_loss": is_hp_loss,
+        "hp_bases_loss": hp_bases_loss,
+    }
 
 
 def ConstraintAwareBasecaller():
-    encoder = NamedSerial(
-        {
-            "conv": build_conv_layers(),
-            "transformer_encoder": build_transformer_encoder(),
-            "upsample": LinearUpsample(512, scale_factor=2),
-            "crf": build_crf_encoder(),
-        }
+    alphabet = ["A", "C", "G", "T", "N"]
+    encoder = HomopolymerAwareEncoder(
+        hp_feature_dim=128, num_bases=len(alphabet), transformer_d_model=512
     )
-    seqdist = CTC_CRF(state_len=5, alphabet=["A", "C", "G", "T", "N"])
+    seqdist = CTC_CRF(state_len=5, alphabet=alphabet)
     model = SeqdistModel(encoder=encoder, seqdist=seqdist)
     model.use_koi = types.MethodType(use_koi, model)
-    model.forward = types.MethodType(forward, model)
+    model.loss = types.MethodType(loss_fn, model)
     return model

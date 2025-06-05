@@ -1,5 +1,5 @@
 from bonito.nn import Convolution, Linear, Permute, Serial
-from torch import Module
+from torch.nn import Module
 
 
 class HomopolymerFeatureExtractor(Module):
@@ -7,7 +7,6 @@ class HomopolymerFeatureExtractor(Module):
         self,
         insize,
         hp_feature_dim,
-        outsize,
         num_bases=5,
         activation="swish",
         norm="batchnorm",
@@ -15,7 +14,6 @@ class HomopolymerFeatureExtractor(Module):
         super().__init__()
         self.insize = insize
         self.hp_feature_dim = hp_feature_dim
-        self.outsize = outsize
         self.num_bases = num_bases
 
         # Convolutional layers extract features but maintain length
