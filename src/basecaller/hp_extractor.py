@@ -59,8 +59,8 @@ class HomopolymerFeatureExtractor(Module):
     def forward(self, x):
         hp_features = self.extractor(x)
         hp_features_permuted = self.permute(hp_features)
-        hp_length_logits = self.hp_length_predictor(hp_features_permuted)
+        hp_lengths_logits = self.hp_length_predictor(hp_features_permuted)
         is_hp_logits = self.is_hp_predictor(hp_features_permuted)
         hp_bases_logits = self.hp_base_predictor(hp_features_permuted)
 
-        return hp_features, hp_length_logits, is_hp_logits, hp_bases_logits
+        return hp_features, hp_lengths_logits, is_hp_logits, hp_bases_logits

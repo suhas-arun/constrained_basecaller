@@ -40,28 +40,22 @@ if [[ $stage1 == "y" || $stage1 == "Y" ]]; then
             $STAGE1_FASTA_FILE \
             $STAGE1_FAST5_DIR \
             10000
-
-        # TODO: remove bonito usage - need to pass in fasta and fast5 files
-
-        echo "Preparing Stage 1 training data..."
-        bonito basecaller \
-            --reference $STAGE1_FASTA_FILE \
-            --save-ctc \
-            --min-accuracy-save-ctc 0.8 \
-            $PRETRAINED_MODEL $STAGE1_FAST5_DIR > $STAGE1_TRAINING_DIR/basecalls.sam
     fi
 
     python3 -m basecaller.train \
         --pre-training \
+        --pre-input-fasta $STAGE1_FASTA_FILE \
+        --pre-input-fast5 $STAGE1_FAST5_DIR \
         --output-directory $STAGE1_OUTPUT_DIR \
         --training-directory $STAGE1_TRAINING_DIR \
-        --epochs 10 \
+        --pre-weights-path $STAGE1_WEIGHTS_FILE \
+        --epochs 5 \
         --chunks 4000 \
         --batch 16 \
-        --weights-path $STAGE1_WEIGHTS_FILE
 
 else
-    read -p "Skipping pre-training. Enter the path to the pre-trained weights file: " STAGE1_WEIGHTS_FILE
+    # read -p "Skipping pre-training. Enter the path to the pre-trained weights file (STAGE 1): " STAGE1_WEIGHTS_FILE
+    STAGE1_WEIGHTS_FILE="$STAGE1_OUTPUT_DIR/weights_5.tar"
 fi
 
 read -p "Do you want to perform Stage 2: Constraint-aware Basecaller Training (y/n): " stage2
@@ -103,14 +97,18 @@ else
 
     # TODO: load stage 1 + 2 weights if available
 
-    python3 -m basecaller.train \
-        --output-directory $STAGE2_OUTPUT_DIR \
-        --training-directory $STAGE2_TRAINING_DIR \
-        --epochs $EPOCHS \
-        --chunks $CHUNKS \
-        --batch $BATCH_SIZE \
-        --weights-path $STAGE2_WEIGHTS_FILE
-
+    if [[ ! -f $STAGE1_WEIGHTS_FILE ]]; then
+        echo "Pre-trained weights file not found: $STAGE1_WEIGHTS_FILE"
+    else
+        python3 -m basecaller.train \
+            --output-directory $STAGE2_OUTPUT_DIR \
+            --training-directory $STAGE2_TRAINING_DIR \
+            --epochs $EPOCHS \
+            --chunks $CHUNKS \
+            --batch $BATCH_SIZE \
+            --pre-weights-path $STAGE1_WEIGHTS_FILE \
+            --weights-path $STAGE2_WEIGHTS_FILE
+    fi
     cd $ROOT_DIR
 fi
 

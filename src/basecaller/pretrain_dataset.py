@@ -1,6 +1,7 @@
 from bonito.multiprocessing import process_cancel
 from bonito.reader import Reader
 import numpy as np
+import torch
 
 
 class PretrainDataset:
@@ -93,12 +94,12 @@ class PretrainDataset:
         signal_chunk = signal[signal_chunk_start:signal_chunk_end]
 
         sequence_id = read_id.split("!")[1]
-        sequence = self.sequences[sequence_id]
+        full_sequence = self.sequences[sequence_id]
         base_start = int(signal_chunk_start / self.signal_points_per_base)
         base_end = int(signal_chunk_end / self.signal_points_per_base)
-        base_end = min(base_end, len(sequence))
+        base_end = min(base_end, len(full_sequence))
 
-        sequence_segment = sequence[base_start:base_end]
+        sequence_segment = full_sequence[base_start:base_end]
 
         if len(signal_chunk) != self.chunksize:
             print(
@@ -106,14 +107,11 @@ class PretrainDataset:
             )
 
         hp_lengths, is_hp, hp_bases = self.generate_homopolymer_labels(sequence_segment)
+        target_hp_feature_length = self.get_hp_feature_length()
 
-        hp_labels = {
-            "hp_lengths": hp_lengths,
-            "is_hp": is_hp,
-            "hp_bases": hp_bases,
-        }
-
-        # TODO: downsample hp_labels to match signal_chunk downsampling in model
+        hp_labels = self.downsample_hp_labels(
+            hp_lengths, is_hp, hp_bases, len(sequence_segment), target_hp_feature_length
+        )
 
         return signal_chunk, hp_labels
 
@@ -142,6 +140,92 @@ class PretrainDataset:
             i = j
 
         return hp_lengths, is_hp, hp_bases
+
+    def downsample_hp_labels(
+        self, hp_lengths, is_hp, hp_bases, sequence_length, target_length
+    ):
+        """
+        Downsample homopolymer labels to match the target length.
+        """
+        downsampled_hp_lengths = np.zeros(target_length, dtype=np.float32)
+        downsampled_is_hp = np.zeros(target_length, dtype=np.bool_)
+        downsampled_hp_bases = np.full(
+            (target_length,), self.BASES["N"], dtype=np.int32
+        )
+
+        if sequence_length == 0:
+            return {
+                "hp_lengths": torch.from_numpy(downsampled_hp_lengths),
+                "is_hp": torch.from_numpy(downsampled_is_hp),
+                "hp_bases": torch.from_numpy(downsampled_hp_bases),
+            }
+
+        bases_per_hp_feature = sequence_length / target_length
+        for i in range(target_length):
+            start_index = int(i * bases_per_hp_feature)
+            end_index = int((i + 1) * bases_per_hp_feature)
+            end_index = min(end_index, len(hp_lengths))
+
+            segment_hp_lengths = hp_lengths[start_index:end_index]
+            segment_is_hp = is_hp[start_index:end_index]
+            segment_hp_bases = hp_bases[start_index:end_index]
+
+            if segment_is_hp.any():
+                downsampled_is_hp[i] = True
+                downsampled_hp_lengths[i] = segment_hp_lengths[segment_is_hp].max()
+                # If there are multiple homopolymers, take the most frequent base
+                if segment_hp_bases[segment_is_hp].size > 0:
+                    # convert to tensor for bincount
+                    segment_hp_bases = torch.from_numpy(segment_hp_bases[segment_is_hp])
+                    downsampled_hp_bases[i] = (
+                        torch.bincount(segment_hp_bases).argmax().item()
+                    )
+            else:
+                downsampled_is_hp[i] = False
+
+        return {
+            "hp_lengths": torch.from_numpy(downsampled_hp_lengths),
+            "is_hp": torch.from_numpy(downsampled_is_hp),
+            "hp_bases": torch.from_numpy(downsampled_hp_bases),
+        }
+
+    def get_hp_feature_length(self):
+        """
+        Calculate the length of the homopolymer feature vector.
+        """
+        length = self.chunksize
+        length = get_conv_output_length(length, 5, 1, 2)
+        length = get_conv_output_length(length, 5, 1, 2)
+        length = get_conv_output_length(length, 9, 3, 4)
+        return length
+
+
+def hp_collate_fn(batch):
+    """
+    Custom collate function to handle variable-length sequences and homopolymer labels.
+    """
+    signals, hp_labels = zip(*batch)
+    batched_signals = np.array(signals)
+    batched_signals = torch.tensor(batched_signals, dtype=torch.float32)
+
+    batched_hp_lengths = torch.from_numpy(
+        np.array([labels["hp_lengths"] for labels in hp_labels])
+    )
+    batched_is_hp = torch.from_numpy(
+        np.array([labels["is_hp"] for labels in hp_labels])
+    )
+    batched_hp_bases = torch.from_numpy(
+        np.array([labels["hp_bases"] for labels in hp_labels])
+    )
+
+    return batched_signals, batched_hp_lengths, batched_is_hp, batched_hp_bases
+
+
+def get_conv_output_length(input_length, kernel_size, stride=1, padding=0):
+    """
+    Calculate the output length of a convolutional layer.
+    """
+    return (input_length + 2 * padding - kernel_size) // stride + 1
 
 
 if __name__ == "__main__":
