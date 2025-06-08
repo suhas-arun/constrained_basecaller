@@ -175,15 +175,18 @@ class HomopolymerAwareEncoder(Module):
         upsampled_output = self.upsample(transformer_output)
         logits = self.crf_encoder(upsampled_output)
 
-        outputs = {
-            "logits": logits,
-            "hp_lengths_logits": hp_lengths_logits,
-            "is_hp_logits": is_hp_logits,
-            "hp_bases_logits": hp_bases_logits,
-        }
+        if self.training:
+            outputs = {
+                "logits": logits,
+                "hp_lengths_logits": hp_lengths_logits,
+                "is_hp_logits": is_hp_logits,
+                "hp_bases_logits": hp_bases_logits,
+            }
 
-        if hp_true_labels is not None:
-            outputs["hp_true_labels"] = hp_true_labels
+            if hp_true_labels is not None:
+                outputs["hp_true_labels"] = hp_true_labels
+        else:
+            outputs = logits
 
         return outputs
 
