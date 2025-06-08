@@ -103,6 +103,8 @@ def main(args):
         print("[loading data]")
         train_loader, valid_loader = load_data(data, model_setup, compute_settings)
 
+        chunks_per_epoch = args.chunks
+
     trainer = Trainer(
         model=model,
         device=device,

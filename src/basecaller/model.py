@@ -135,7 +135,8 @@ class HomopolymerAwareEncoder(Module):
         self.crf_encoder = self.build_crf_encoder()
 
     def forward(self, x, hp_true_labels=None):
-        x = x.unsqueeze(1)
+        if x.dim() == 2:
+            x = x.unsqueeze(1)
         # Initial convolutions
         x_intermediate = self.initial_convs(x)  # (N, 128, L/3)
 

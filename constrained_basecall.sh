@@ -55,7 +55,7 @@ if [[ $stage1 == "y" || $stage1 == "Y" ]]; then
 
 else
     # read -p "Skipping pre-training. Enter the path to the pre-trained weights file (STAGE 1): " STAGE1_WEIGHTS_FILE
-    STAGE1_WEIGHTS_FILE="$STAGE1_OUTPUT_DIR/weights_5.tar"
+    STAGE1_WEIGHTS_FILE="$STAGE1_OUTPUT_DIR/weights.tar"
 fi
 
 read -p "Do you want to perform Stage 2: Constraint-aware Basecaller Training (y/n): " stage2
