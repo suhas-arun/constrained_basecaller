@@ -119,6 +119,28 @@ def main(args):
     lr = (
         float(args.lr) if "," not in args.lr else [float(x) for x in args.lr.split(",")]
     )
+
+    if not args.pre_training and args.frozen_epochs > 0 and args.pre_weights_path:
+        print("[Freezing pre-trained layers for initial epochs]")
+        for name, param in model.named_parameters():
+            if "encoder.initial_convs" in name or "encoder.hp_extractor" in name:
+                param.requires_grad = False
+
+        print(
+            f"[Stage 2 (Phase 1): Training with frozen layers for {args.frozen_epochs} epochs]"
+        )
+
+        trainer.fit(workdir, args.frozen_epochs, lr, **config["optim"])
+
+        print(
+            f"[Stage 2 (Phase 2): Unfreezing layers and continuing training for {args.epochs - args.frozen_epochs} epochs]"
+        )
+
+        for param in model.parameters():
+            param.requires_grad = True
+
+        trainer.optimizer = None  # reset optimiser
+
     trainer.fit(workdir, args.epochs, lr, **config["optim"])
 
     if args.pre_training:
@@ -202,6 +224,12 @@ if __name__ == "__main__":
         type=int,
         default=32,
         help="Batch size for training",
+    )
+    parser.add_argument(
+        "--frozen-epochs",
+        type=int,
+        default=0,
+        help="Number of epochs to train with frozen pre-trained layers",
     )
     parser.add_argument(
         "--epochs",

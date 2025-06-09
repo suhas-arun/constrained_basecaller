@@ -267,16 +267,19 @@ class HomopolymerAwareEncoder(Module):
 
 
 def loss_fn(self, outputs, ctc_targets, ctc_target_lengths):
-    hp_true_labels = outputs.get("hp_true_labels", None)
+    if isinstance(outputs, dict):
+        hp_true_labels = outputs.get("hp_true_labels", None)
 
-    # Extract logits and auxiliary outputs
-    logits = outputs["logits"]
-    hp_lengths_logits = outputs["hp_lengths_logits"]
-    is_hp_logits = outputs["is_hp_logits"]
-    hp_bases_logits = outputs["hp_bases_logits"]
+        # Extract logits and auxiliary outputs
+        logits = outputs["logits"]
+        hp_lengths_logits = outputs["hp_lengths_logits"]
+        is_hp_logits = outputs["is_hp_logits"]
+        hp_bases_logits = outputs["hp_bases_logits"]
+    else:
+        logits = outputs
+        hp_true_labels = None
 
     device = logits.device
-
     aux_loss_weight = 0.1
 
     # Initialise losses
@@ -291,7 +294,7 @@ def loss_fn(self, outputs, ctc_targets, ctc_target_lengths):
         true_hp_bases = hp_true_labels["hp_bases"].to(device)
 
         # Regression loss for homopolymer lengths
-        hp_lengths_logits = hp_lengths_logits.squeeze(-1) 
+        hp_lengths_logits = hp_lengths_logits.squeeze(-1)
         hp_lengths_loss = F.mse_loss(hp_lengths_logits, true_hp_lengths)
 
         # Binary cross-entropy loss for homopolymer presence

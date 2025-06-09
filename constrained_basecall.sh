@@ -42,6 +42,11 @@ if [[ $stage1 == "y" || $stage1 == "Y" ]]; then
             10000
     fi
 
+    # Pre-training hyperparameters
+    PRE_EPOCHS=5
+    PRE_CHUNKS=4000
+    PRE_BATCH_SIZE=16
+
     python3 -m basecaller.train \
         --pre-training \
         --pre-input-fasta $STAGE1_FASTA_FILE \
@@ -49,13 +54,12 @@ if [[ $stage1 == "y" || $stage1 == "Y" ]]; then
         --output-directory $STAGE1_OUTPUT_DIR \
         --training-directory $STAGE1_TRAINING_DIR \
         --pre-weights-path $STAGE1_WEIGHTS_FILE \
-        --epochs 5 \
-        --chunks 4000 \
-        --batch 16 \
+        --epochs $PRE_EPOCHS \
+        --chunks $PRE_CHUNKS \
+        --batch $PRE_BATCH_SIZE \
 
 else
-    # read -p "Skipping pre-training. Enter the path to the pre-trained weights file (STAGE 1): " STAGE1_WEIGHTS_FILE
-    STAGE1_WEIGHTS_FILE="$STAGE1_OUTPUT_DIR/weights.tar"
+    read -p "Skipping pre-training. Enter the path to the pre-trained weights file (STAGE 1): " STAGE1_WEIGHTS_FILE
 fi
 
 read -p "Do you want to perform Stage 2: Constraint-aware Basecaller Training (y/n): " stage2
@@ -69,6 +73,7 @@ else
 
     # Training hyperparameters
     EPOCHS=10
+    FROZEN_EPOCHS=3
     CHUNKS=4000
     BATCH_SIZE=16
 
@@ -87,7 +92,7 @@ else
             10000 \
             --constrained
 
-        echo "Preparaing training data..."
+        echo "Prepairing training data..."
         bonito basecaller \
             --reference $STAGE2_TRAINING_FASTA_FILE \
             --save-ctc \
@@ -95,14 +100,13 @@ else
             $PRETRAINED_MODEL $STAGE2_TRAINING_FAST5_DIR > $STAGE2_TRAINING_DATA
     fi
 
-    # TODO: load stage 1 + 2 weights if available
-
     if [[ ! -f $STAGE1_WEIGHTS_FILE ]]; then
         echo "Pre-trained weights file not found: $STAGE1_WEIGHTS_FILE"
     else
         python3 -m basecaller.train \
             --output-directory $STAGE2_OUTPUT_DIR \
             --training-directory $STAGE2_TRAINING_DIR \
+            --frozen-epochs $FROZEN_EPOCHS \
             --epochs $EPOCHS \
             --chunks $CHUNKS \
             --batch $BATCH_SIZE \
