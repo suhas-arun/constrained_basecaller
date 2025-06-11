@@ -59,6 +59,7 @@ class PretrainDataset:
         """
         self.signals = {}
         chunk_metadata = []
+        print("Reading FAST5 files and generating chunk metadata...")
         reads = self.reader.get_reads(
             self.fast5_dir,
             n_proc=8,
