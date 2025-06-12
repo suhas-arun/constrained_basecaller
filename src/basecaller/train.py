@@ -6,6 +6,7 @@ import numpy as np
 import toml
 import torch
 from torch.utils.data import Subset, DataLoader
+from torch.optim.lr_scheduler import LambdaLR
 
 from basecaller.model import ConstraintAwareBasecaller
 from basecaller.pretrain_dataset import PretrainDataset, hp_collate_fn
@@ -47,7 +48,7 @@ def main(args):
         )
 
         num_chunks = len(pretrain_dataset)
-        num_valid_chunks = int(num_chunks * 0.1)
+        num_valid_chunks = int(num_chunks * 0.2)
         num_train_chunks = num_chunks - num_valid_chunks
 
         indices = np.arange(num_chunks)
@@ -70,6 +71,23 @@ def main(args):
         )
 
         chunks_per_epoch = len(train_loader)
+
+        constant_lr_scheduler = lambda optimizer, *_: LambdaLR(
+            optimizer, lr_lambda=lambda _: 1.0
+        )
+
+        trainer = Trainer(
+            model=model,
+            device=device,
+            train_loader=train_loader,
+            valid_loader=valid_loader,
+            quantile_grad_clip=True,
+            chunks_per_epoch=chunks_per_epoch,
+            batch_size=args.batch,
+            pre_training=True,
+            lr_scheduler_fn=constant_lr_scheduler,
+        )
+
     else:
         print("[Stage 2: Training basecaller model]")
         if args.pre_weights_path:
@@ -80,8 +98,6 @@ def main(args):
 
             model.encoder.initial_convs.load_state_dict(initial_convs_weights)
             model.encoder.hp_extractor.load_state_dict(hp_extractor_weights)
-
-        # TODO: finish stage 2 training setup
 
         data = DataSettings(
             training_data=args.training_directory,
@@ -105,16 +121,15 @@ def main(args):
 
         chunks_per_epoch = args.chunks
 
-    trainer = Trainer(
-        model=model,
-        device=device,
-        train_loader=train_loader,
-        valid_loader=valid_loader,
-        quantile_grad_clip=True,
-        chunks_per_epoch=chunks_per_epoch,
-        batch_size=args.batch,
-        pre_training=args.pre_training,
-    )
+        trainer = Trainer(
+            model=model,
+            device=device,
+            train_loader=train_loader,
+            valid_loader=valid_loader,
+            quantile_grad_clip=True,
+            chunks_per_epoch=chunks_per_epoch,
+            batch_size=args.batch,
+        )
 
     lr = (
         float(args.lr) if "," not in args.lr else [float(x) for x in args.lr.split(",")]

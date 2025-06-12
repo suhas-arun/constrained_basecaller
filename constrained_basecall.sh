@@ -15,6 +15,10 @@ STAGE2_TRAINING_DIR="$ROOT_DIR/data/train/stage2"
 STAGE2_OUTPUT_DIR="$ROOT_DIR/out/stage2"
 STAGE2_WEIGHTS_FILE="$STAGE2_OUTPUT_DIR/weights.tar"
 
+NUM_PRETRAIN_SEQUENCES=100000
+NUM_TRAIN_SEQUENCES=200000
+NUM_TEST_SEQUENCES=10000
+
 # Baseline model parameters
 PRETRAINED_MODEL="dna_r10.4.1_e8.2_400bps_sup@v5.0.0/"
 
@@ -39,13 +43,13 @@ if [[ $stage1 == "y" || $stage1 == "Y" ]]; then
         ./generate_data.sh \
             $STAGE1_FASTA_FILE \
             $STAGE1_FAST5_DIR \
-            10000
+            $NUM_PRETRAIN_SEQUENCES
     fi
 
     # Pre-training hyperparameters
     PRE_EPOCHS=5
-    PRE_CHUNKS=4000
     PRE_BATCH_SIZE=16
+    PRE_LR=0.01
 
     python3 -m basecaller.train \
         --pre-training \
@@ -55,8 +59,8 @@ if [[ $stage1 == "y" || $stage1 == "Y" ]]; then
         --training-directory $STAGE1_TRAINING_DIR \
         --pre-weights-path $STAGE1_WEIGHTS_FILE \
         --epochs $PRE_EPOCHS \
-        --chunks $PRE_CHUNKS \
         --batch $PRE_BATCH_SIZE \
+        --lr $PRE_LR
 
 else
     read -p "Skipping pre-training. Enter the path to the pre-trained weights file (STAGE 1): " STAGE1_WEIGHTS_FILE
@@ -72,9 +76,9 @@ else
     STAGE2_TRAINING_FAST5_DIR="$STAGE2_TRAINING_DIR/fast5"
 
     # Training hyperparameters
-    EPOCHS=10
-    FROZEN_EPOCHS=3
-    CHUNKS=4000
+    EPOCHS=20
+    FROZEN_EPOCHS=5
+    CHUNKS=50000
     BATCH_SIZE=16
 
     read -p "Do you want to generate new constrained training data? (y/n): " confirm
@@ -89,7 +93,7 @@ else
         ./generate_data.sh \
             $STAGE2_TRAINING_FASTA_FILE \
             $STAGE2_TRAINING_FAST5_DIR \
-            10000 \
+            $NUM_TRAIN_SEQUENCES \
             --constrained
 
         echo "Prepairing training data..."
@@ -116,12 +120,15 @@ else
     cd $ROOT_DIR
 fi
 
-TEST_DIR="$ROOT_DIR/data/test"
-TEST_FASTA_FILE="$TEST_DIR/reference.fasta"
+TEST_DIR="$ROOT_DIR/data/baseline/test"
+TEST_FASTA_FILE="$TEST_DIR/mock_data.fasta"
 TEST_FAST5_DIR="$TEST_DIR/fast5"
-SAM_FILE="$STAGE2_OUTPUT_DIR/basecalls.sam"
+TEST_OUTPUT_DIR="$ROOT_DIR/out/test"
+SAM_FILE="$TEST_OUTPUT_DIR/basecalls.sam"
+
 
 mkdir -p $TEST_DIR
+mkdir -p $TEST_OUTPUT_DIR
 
 read -p "Do you want to generate new test data? (y/n): " confirm
 if [[ $confirm != "y" && $confirm != "Y" ]]; then
@@ -130,7 +137,7 @@ else
     ./generate_data.sh \
         $TEST_FASTA_FILE \
         $TEST_FAST5_DIR \
-        10000 \
+        $NUM_TEST_SEQUENCES \
         --constrained
 fi
 

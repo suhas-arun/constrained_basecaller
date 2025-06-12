@@ -176,19 +176,15 @@ class HomopolymerAwareEncoder(Module):
         logits = self.crf_encoder(upsampled_output)
 
         if self.training:
-            outputs = {
+            return {
                 "logits": logits,
+                "hp_true_labels": hp_true_labels,
                 "hp_lengths_logits": hp_lengths_logits,
                 "is_hp_logits": is_hp_logits,
                 "hp_bases_logits": hp_bases_logits,
             }
 
-            if hp_true_labels is not None:
-                outputs["hp_true_labels"] = hp_true_labels
-        else:
-            outputs = logits
-
-        return outputs
+        return logits
 
     def build_initial_convs(self):
         return Serial(
@@ -267,17 +263,12 @@ class HomopolymerAwareEncoder(Module):
 
 
 def loss_fn(self, outputs, ctc_targets, ctc_target_lengths):
-    if isinstance(outputs, dict):
-        hp_true_labels = outputs.get("hp_true_labels", None)
-
-        # Extract logits and auxiliary outputs
-        logits = outputs["logits"]
-        hp_lengths_logits = outputs["hp_lengths_logits"]
-        is_hp_logits = outputs["is_hp_logits"]
-        hp_bases_logits = outputs["hp_bases_logits"]
-    else:
+    if isinstance(outputs, torch.Tensor):
         logits = outputs
         hp_true_labels = None
+    else:
+        hp_true_labels = outputs["hp_true_labels"]
+        logits = outputs["logits"]
 
     device = logits.device
     aux_loss_weight = 0.1
@@ -294,11 +285,11 @@ def loss_fn(self, outputs, ctc_targets, ctc_target_lengths):
         true_hp_bases = hp_true_labels["hp_bases"].to(device)
 
         # Regression loss for homopolymer lengths
-        hp_lengths_logits = hp_lengths_logits.squeeze(-1)
+        hp_lengths_logits = outputs["hp_lengths_logits"].squeeze(-1)
         hp_lengths_loss = F.mse_loss(hp_lengths_logits, true_hp_lengths)
 
         # Binary cross-entropy loss for homopolymer presence
-        is_hp_logits = is_hp_logits.squeeze(-1)
+        is_hp_logits = outputs["is_hp_logits"].squeeze(-1)
         is_hp_loss = F.binary_cross_entropy_with_logits(
             is_hp_logits, true_is_hp.float()
         )
@@ -306,7 +297,7 @@ def loss_fn(self, outputs, ctc_targets, ctc_target_lengths):
         # Categorical cross-entropy loss for homopolymer bases
         true_hp_bases = true_hp_bases.long()
         hp_bases_loss = F.cross_entropy(
-            hp_bases_logits.view(-1, self.encoder.num_bases),
+            outputs["hp_bases_logits"].view(-1, self.encoder.num_bases),
             true_hp_bases.view(-1),
             # 'N' is the last base
             ignore_index=self.encoder.num_bases - 1,
@@ -314,10 +305,11 @@ def loss_fn(self, outputs, ctc_targets, ctc_target_lengths):
         aux_loss = hp_lengths_loss + is_hp_loss + hp_bases_loss
         final_loss = aux_loss_weight * aux_loss
     else:
-        ctc_targets = ctc_targets.to(device)
-        ctc_target_lengths = ctc_target_lengths.to(device)
-        logits = logits.to(torch.float32)
-        ctc_loss = self.seqdist.ctc_loss(logits, ctc_targets, ctc_target_lengths)
+        if ctc_targets is not None and ctc_target_lengths is not None:
+            ctc_targets = ctc_targets.to(device)
+            ctc_target_lengths = ctc_target_lengths.to(device)
+            logits = logits.to(torch.float32)
+            ctc_loss = self.seqdist.ctc_loss(logits, ctc_targets, ctc_target_lengths)
         final_loss = ctc_loss
 
     return {
